@@ -1,13 +1,27 @@
 # **TE Alignment Pipeline**
 
-Pipeline of RNAseq to align TEs aswell as genes
+Pipeline to align RNAseq data and obtain counts for both TEs and genes
+
+## **Outline**
+
+* [Requirements](#requirements)
+* [Pipeline](#pipeline)
+  * [STEP 1 - Align uniquely mapped reads](#step-1---align-uniquely-mapped-reads)
+  * [STEP 2 - Align mapped mapped reads](#step-2---align-multi-mapped-reads)
+  * [STEP 3 (Optional) - Align uniquely mapped reads](#step-3-optional---create-a-log-for-all-the-alignments)
+  * [STEP 4 - Create gtf files](#step-4---create-gtf-files)
+    * [STEP 4.1 - Get the counts at the individual level](#step-41---get-the-counts-of-the-genes-and-tes-at-the-individual-level)
+    * [STEP 4.2 - Get the counts at the subfamily level](#step-42---get-the-counts-of-the-genes-and-tes-at-the-subfamily-level)
+* [Just Press Enter](#just-press-enter)
+* [STAR Arguments explained](#star-arguments-explained)
+* [featureCounts Arguments explained](#featurecounts-arguments-explained)
 
 ## **Requirements**
 
-- STAR
-- featureCounts
-- a .gtf file with TEs annotated individually
-- a .gtf file with TEs annotated per subfamily
+* STAR
+* featureCounts
+* a .gtf file with TEs annotated individually (you can see [here](#step-4---create-gtf-files) how to get it)
+* a .gtf file with TEs annotated per subfamily (you can see [here](#step-4---create-gtf-files) how to get it)
 
 ## **Pipeline**
 
@@ -34,7 +48,7 @@ STAR --runThreadN 16  \
      --readFilesIn ${file%_*}_1.fastq ${file%_*}_2.fastq # For paired-end
 ```
 
-Alternative, you could also run the `star_align_unique_TE.sh` in this folder
+Alternative, you could also `star_align_unique_TE.sh` (available in this repo)
 
 ```bash
 bash star_align_unique_TE_passive.sh [folder_fastqs] [output_folder]
@@ -64,7 +78,7 @@ STAR --runThreadN 72 \
 	 --readFilesIn ${file%_*}_1.fastq ${file%_*}_2.fastq # For paired-end
 ```
 
-Alternative, you could also run the `star_align_multi_TE.sh` in this folder
+Alternative, you could also run `star_align_multi_TE.sh` (available in this repo)
 
 ```bash
 bash star_align_multi_TE.sh [folder_fastqs] [output_folder]
@@ -92,10 +106,10 @@ According to him this is what the sript does:
 
 Running this will output:
 
-- `rmsk_TEClass.gtf`
-- `rmsk_TEIndividual.gtf`
+* `rmsk_TEClass.gtf`
+* `rmsk_TEIndividual.gtf`
 
-Usually when I run featureCounts I do it with a gtf that has already both the genes and TEs. To merge both gtfs run:
+You can make a gtf with both genes and TEs in teh sam file by using the code below. **However, you will get more TEs counts if you run featureCounts with genes and TEs in separate files**
 
 ```bash
 # Gene + Individual TEs
@@ -110,17 +124,26 @@ cat [gene.annotation.gtf] rmsk_TEClass.gtf | sort -k1,1 -k4,4n > TEClass_and_gen
 For this we only used the uniquelly mapped bams
 
 ```bash
-# For paired-end
-featureCounts -a "TEIndividual_and_genes.gtf" \ # Annotation file with genes and individual TEs
--o "${output_folder}/Counts_TEIndividual_AllSamples.txt" \
--t exon,gene \
+# You can easily get a list of bam files with
+bam_files=$(ls ${bam_folder}*.bam)
+
+# For TEs paired-end
+featureCounts -a "rmsk_TEIndividual.gtf" \ # Annotation file individual TEs
+-o "${output_folder}/Counts_TEIndividual.txt" \
+-t exon \
 -g gene_name \
 -p -C \
 -T 16 \
 ${bam_files} # Example "sample1.bam sample2.bam sample3.bam" 
 
-# You can easily get a list of bam files with
-bam_files=$(ls ${bam_folder}*.bam)
+# For genes paired-end
+featureCounts -a "gencode.v44.annotation_gene.gtf" \ # Annotation file for genes
+-o "${output_folder}/Counts_Genes_Unique.txt" \
+-t gene \
+-g gene_name \
+-p -C \
+-T 16 \
+${bam_files} # Example "sample1.bam sample2.bam sample3.bam" 
 ```
 
 ### STEP 4.2 - Get the counts of the genes and TEs at the subfamily level
@@ -128,40 +151,52 @@ bam_files=$(ls ${bam_folder}*.bam)
 For this we only used the multi-mapped bams
 
 ```bash
-# For paired-end
-featureCounts -a "TEClass_and_genes.gtf" \ # Annotation file with genes and families of TEs
--o "${output_folder}/Counts_TEClass_AllSamples.txt" \
--t exon,gene \
+# You can easily get a list of bam files with
+bam_files=$(ls ${bam_folder}*.bam)
+
+# For TEs paired-end
+featureCounts -a "rmsk_TEClass.gtf" \ # Annotation file with families of TEs
+-o "${output_folder}/Counts_TEClass.txt" \
+-t exon \
 -g gene_name \
 -M -p -C \
 -T 16 \
 ${bam_files} # Example "sample1.bam sample2.bam sample3.bam" 
-
-# You can easily get a list of bam files with
-bam_files=$(ls ${bam_folder}*.bam)
 ```
 
-## STAR Arguments explanation
+## Just Press Enter
+
+The script `TE_pipeline.sh` does all of these steps in one go! You just have to give it the fasta_folder, the output folders, the threads you want to use, the mode (unique or multi) and the end-type (single [SE] or paired [PE]).
+
+```bash
+bash TE_pipeline.sh [fasta_folder] [output_bams_folder] [output_counts_folder] [threads] [mode] [end]
+```
+
+>**Important**
+>
+> To run `TE_pipeline.sh` you should define some constants that will probably be the same every time you use this script, but the path may change between people. So the first time you run, you should change the paths in lines 23-26.
+
+## STAR Arguments explained
 
 For more check: [STAR Manual](https://physiology.med.cornell.edu/faculty/skrabanek/lab/angsd/lecture_notes/STARmanual.pdf)
 
-- _--alignIntronMax 500000_: Maximum Intro size
-- _--alignMatesGapMax 500000_: Maximum gap size between two mates
-- _--alignEndsType EndToEnd_: force end-to-end read alignment, do not soft-clip
-- _--outFilterMultiNmax 1_: max number of multiple alignments allowed for a read. If exceeded, the read is considered unmapped
-- _--outFilterMismatchNmax 999_: maximum number of mismatched per pair, large number of switches off this filter
-- _--outFilterMismatchNoverReadLmax 0.04_: max number of mismatches per pair relative to read length: for 2x100b, max number of mismatches is 0.04*200=8 for the paired read
-- _--outSAMmultNmax 1_: parameter limits the number of output alignments (SAM lines) for multimappers
-- _--seedMultimapNmax_: 20000: only pieces that map fewer than this value are utilized in the stiching procedure
+* `--alignIntronMax 500000`: Maximum Intro size
+* `--alignMatesGapMax 500000`: Maximum gap size between two mates
+* `--alignEndsType EndToEnd`: force end-to-end read alignment, do not soft-clip
+* `--outFilterMultiNmax 1`: max number of multiple alignments allowed for a read. If exceeded, the read is considered unmapped
+* `--outFilterMismatchNmax 999`: maximum number of mismatched per pair, large number of switches off this filter
+* `--outFilterMismatchNoverReadLmax 0.04`: max number of mismatches per pair relative to read length: for 2x100b, max number of mismatches is 0.04*200=8 for the paired read
+* `--outSAMmultNmax 1`: parameter limits the number of output alignments (SAM lines) for multimappers
+* `--seedMultimapNmax`: 20000: only pieces that map fewer than this value are utilized in the stiching procedure
 
 ## FeatureCounts Arguments explained
 
 For more check: [featureCounts Docs](https://subread.sourceforge.net/featureCounts.html)
 
-- _-a_: Annotation file
-- _-o_: output file
-- _-g_: Specify attribute type in a GTF annotation used for counting, default: gene_id
-- _-s_: strand. 0 - unstranded; 1- stranded; 2- reversly stranded
-- _-C_: don’t count read pairs that have their two ends mapping to different chromosomes or mapping to different strands
-- _-p_: paired-end reads. Remove for single-end
-- _-M_: Multi-mapping reads will also be counted
+* `-a`: Annotation file
+* `-o`: output file
+* `-g`: Specify attribute type in a GTF annotation used for counting, default: gene_id
+* `-s`: strand. 0 - unstranded; 1- stranded; 2- reversly stranded
+* `-C`: don’t count read pairs that have their two ends mapping to different chromosomes or mapping to different strands
+* `-p`: paired-end reads. Remove for single-end
+* `-M`: Multi-mapping reads will also be counted
